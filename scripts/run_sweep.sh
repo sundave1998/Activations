@@ -5,8 +5,11 @@
 set -euo pipefail
 
 # --- Configuration (edit as needed) ---
-ACTS=(relu selu exp reu elu softmax)
-LRS=(1e-4 5e-4 1e-3 5e-3 1e-2)
+# ACTS=(relu selu exp reu elu softmax)
+ACTS=(relu selu)
+
+# LRS=(1e-4 5e-4 1e-3 5e-3 1e-2 5e-2 1e-1)
+LRS=(5e-2 1e-1)
 EPOCHS=20
 HIDDEN=512
 BATCH=128
