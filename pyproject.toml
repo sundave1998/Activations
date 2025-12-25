@@ -47,3 +47,9 @@ flash-attn = [{ requirement = "torch", match-runtime = true }]
 flash-attn = { FLASH_ATTENTION_SKIP_CUDA_BUILD = "TRUE" }
 
 
+
+[tool.black]
+line-length = 80
+
+
+
