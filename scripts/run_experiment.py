@@ -68,6 +68,45 @@ class SoftmaxActivation(nn.Module):
         return nn.functional.softmax(input, dim=-1)
 
 
+class LinearActivation(nn.Module):
+    """
+    Applies the Softmax activation function elementwise
+    """
+
+    def __init__(self):
+        super(LinearActivation, self).__init__()
+
+    def forward(self, input):
+        return input
+
+
+class SparseActivation(nn.Module):
+    """
+    Applies the Softmax activation function elementwise
+    topk
+    = -1: no sparsity
+    = 0: half sparsity
+    > 0: number as sparsity
+    """
+
+    def __init__(self, topk=0):
+        super(SparseActivation, self).__init__()
+        self.topk = topk
+
+    def forward(self, input):
+        if self.topk == 0:
+            topk = int(input.shape[-1] / 2)
+        elif self.topk == -1:
+            topk = input.shape[-1]
+        else:
+            topk = self.topk
+        res = torch.zeros_like(input)
+        with torch.no_grad():
+            indices = torch.topk(input, topk).indices
+        res = res.scatter(-1, indices, 1)
+        return torch.mul(input, res)
+
+
 class MLP(nn.Module):
     def __init__(
         self,
@@ -76,6 +115,7 @@ class MLP(nn.Module):
         hidden_sizes: List[int],
         p_drop=0.2,
         act_fn: str = "relu",
+        topk=-1,
         use_layer_norm: bool = True,
     ):
         super(MLP, self).__init__()
@@ -92,10 +132,13 @@ class MLP(nn.Module):
             activation = ReEUActivation()
         elif act_fn == "elu":
             activation = nn.ELU()
+        elif act_fn == "linear":
+            activation = LinearActivation()
         else:
             raise ValueError(f"Unsupported activation function: {act_fn}")
 
         dropout = nn.Dropout(p=p_drop)
+        sparse = SparseActivation(topk=topk)
 
         layers = [nn.Flatten()]
         prev_dim = in_features
@@ -103,7 +146,9 @@ class MLP(nn.Module):
             layers.append(nn.Linear(prev_dim, hidden_dim))
             if use_layer_norm:
                 layers.append(nn.LayerNorm(hidden_dim))
-            layers.extend([activation, dropout])
+            # layers.extend([activation, dropout])
+            layers.extend([sparse, activation, dropout])
+            # layers.extend([sparse, dropout])
             prev_dim = hidden_dim
         layers.append(nn.Linear(prev_dim, out_features))
 
@@ -176,7 +221,10 @@ def fit(
     lr: float,
     exp_logger=None,
 ):
-    optimizer = torch.optim.SGD(params=network.parameters(), lr=lr)
+    # optimizer = torch.optim.SGD(params=network.parameters(), lr=lr)
+    optimizer = torch.optim.AdamW(
+        params=network.parameters(), lr=lr, weight_decay=1e-3
+    )
     ce = nn.CrossEntropyLoss()
     accuracy = Accuracy()
 
@@ -251,7 +299,7 @@ class ExperimentLogger:
         if use_wandb and wandb is None:
             print(
                 "wandb requested but package failed to import.",
-                "Continuing without wandb."
+                "Continuing without wandb.",
             )
 
         if self.use_wandb:
@@ -331,7 +379,7 @@ def main():
         "--activation",
         type=str,
         default="relu",
-        choices=["relu", "selu", "exp", "reu", "elu", "softmax"],
+        choices=["relu", "selu", "exp", "reu", "elu", "softmax", "linear"],
         help="activation to use",
     )
     parser.add_argument(
@@ -348,6 +396,7 @@ def main():
     )
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--topk", type=int, default=0)
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--p-drop", type=float, default=0.05)
     parser.add_argument("--num-workers", type=int, default=4)
@@ -454,6 +503,7 @@ def main():
         p_drop=args.p_drop,
         act_fn=args.activation,
         use_layer_norm=args.layer_norm,
+        topk=args.topk,
     ).to(device)
     sys_logger.info(
         f"Model initialized: activation={args.activation}, hidden_sizes={
@@ -463,9 +513,7 @@ def main():
 
     # logger
     if args.wandb and wandb is None:
-        sys_logger.warning(
-            "wandb requested but the package failed to import"
-        )
+        sys_logger.warning("wandb requested but the package failed to import")
     outdir = Path(args.outdir) / args.exp_name
     config = vars(args)
     logger = ExperimentLogger(

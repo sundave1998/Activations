@@ -6,13 +6,16 @@ set -euo pipefail
 
 # --- Configuration (edit as needed) ---
 # ACTS=(relu selu exp reu elu softmax)
-ACTS=(relu selu)
+# ACTS=(linear relu exp)
+ACTS=(linear exp)
 
 # LRS=(1e-4 5e-4 1e-3 5e-3 1e-2 5e-2 1e-1)
-LRS=(5e-2 1e-1)
+LRS=(1e-2 1e-1)
 EPOCHS=20
 HIDDEN=512
 BATCH=128
+# TOPK=(-1 0  50  100 200)
+TOPK=(-1)
 P_DROP=0.05
 OUTDIR=logs
 NUM_WORKERS=4
@@ -30,35 +33,38 @@ echo "Sweep configuration: activations=${ACTS[*]}, lrs=${LRS[*]}, epochs=${EPOCH
 run_count=0
 for act in "${ACTS[@]}"; do
   for lr in "${LRS[@]}"; do
-    exp_name="sweep_${act}_lr${lr}_hd${HIDDEN}_bs${BATCH}_p${P_DROP}"
-    run_dir="${OUTDIR}/${exp_name}"
-    mkdir -p "${run_dir}"
+    for TOPK in "${TOPK[@]}"; do
+      # exp_name="sweep_LN_${act}_lr${lr}_topk${HIDDEN}_bs${BATCH}_p${P_DROP}"
+      exp_name="sweep_LN_${act}_lr${lr}_topk${TOPK}"
+      run_dir="${OUTDIR}/${exp_name}"
+      mkdir -p "${run_dir}"
 
-    echo "\n=== Running ${exp_name} ==="
-    echo "Activation: ${act}, LR: ${lr}, Hidden: ${HIDDEN}, Epochs: ${EPOCHS}"
+      echo "\n=== Running ${exp_name} ==="
+      echo "Activation: ${act}, LR: ${lr}, Hidden: ${HIDDEN}, Epochs: ${EPOCHS}"
 
-    # Build command
-    cmd=(python scripts/run_experiment.py --exp-name "${exp_name}" --activation "${act}" --hidden-dim "${HIDDEN}" --epochs "${EPOCHS}" --lr "${lr}" \
-         --batch-size "${BATCH}" --p-drop "${P_DROP}" --outdir "${OUTDIR}" --num-workers "${NUM_WORKERS}")
+      # Build command
+      cmd=(python scripts/run_experiment.py --exp-name "${exp_name}" --activation "${act}" --hidden-dim "${HIDDEN}" --epochs "${EPOCHS}" --lr "${lr}" \
+          --batch-size "${BATCH}" --p-drop "${P_DROP}" --outdir "${OUTDIR}" --num-workers "${NUM_WORKERS}" --layer-norm --topk "${TOPK}")
 
-    if [ "${RUN_WANDB}" != "true" ]; then
-        cmd+=(--no-wandb)
-    fi
+      if [ "${RUN_WANDB}" != "true" ]; then
+          cmd+=(--no-wandb)
+      fi
 
-    # Run and save stdout/stderr to run.log
-    "${cmd[@]}" 2>&1 | tee "${run_dir}/run.log"
+      # Run and save stdout/stderr to run.log
+      "${cmd[@]}" 2>&1 | tee "${run_dir}/run.log"
 
-    echo "Finished ${exp_name} — logs: ${run_dir}/run.log"
+      echo "Finished ${exp_name} — logs: ${run_dir}/run.log"
 
-    run_count=$((run_count+1))
-    # Quick throttle
-    sleep 1
+      run_count=$((run_count+1))
+      # Quick throttle
+      sleep 1
 
-    # Optional smoke-only mode
-    #if [ "${SMOKE_ONLY}" = "true" ] && [ "${run_count}" -ge "${MAX_RUNS}" ]; then
-    #  echo "Smoke-only: stopping after ${MAX_RUNS} runs"
-    #  exit 0
-    #fi
+      # Optional smoke-only mode
+      #if [ "${SMOKE_ONLY}" = "true" ] && [ "${run_count}" -ge "${MAX_RUNS}" ]; then
+      #  echo "Smoke-only: stopping after ${MAX_RUNS} runs"
+      #  exit 0
+      #fi
+    done
   done
 done
 
